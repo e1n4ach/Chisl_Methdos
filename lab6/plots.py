@@ -1,19 +1,62 @@
-"""Воспроизводимые графики по фактическим таблицам checks.py."""
+"""Воспроизводимые графики решений и таблиц исследований."""
 
 from pathlib import Path
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import matplotlib.patheffects as path_effects
+from matplotlib.lines import Line2D
 from matplotlib.ticker import FixedLocator, FuncFormatter, NullFormatter
+import numpy as np
 import pandas as pd
 
 from analysis import method_name
 from boundaries import BOUNDARY_NAMES
+from problem import exact_solution
+from solver import Config, solve
 
 
 def short_name(scheme: str, order: int) -> str:
     return f"{'Крест' if scheme == 'explicit' else 'Неявная'}, старт {order}"
+
+
+def save_solution_plot(config: Config, output: Path) -> None:
+    """Временные кривые одной численной комбинации в пяти точках x."""
+    solution = solve(config)
+    figure, axis = plt.subplots(figsize=(12, 6))
+    colors = plt.get_cmap("tab10").colors[:5]
+    exact_effects = [path_effects.Stroke(linewidth=3, foreground="white"),
+                     path_effects.Normal()]
+
+    for color, requested_x in zip(colors, np.linspace(0, 1, 5)):
+        index = int(np.argmin(np.abs(solution.x - requested_x)))
+        x = solution.x[index]
+        axis.plot(solution.time, solution.values[:, index], color=color, linewidth=2,
+                  label=f"{x:g}")
+        axis.plot(solution.time, exact_solution(x, solution.time), color=color,
+                  linestyle="--", linewidth=1.1, path_effects=exact_effects)
+
+    axis.grid(True, alpha=0.25)
+    axis.set(title="Колебания во времени в выбранных точках", xlabel="t (безразмерное)",
+             ylabel="u (безразмерное)")
+    axis.legend(loc="upper center", bbox_to_anchor=(0.5, -0.16), ncol=5,
+                title="Положение x", frameon=False)
+    if np.isclose(config.final_time, 6*np.pi):
+        axis.set_xticks(np.arange(7)*np.pi,
+                        ["0", "π", "2π", "3π", "4π", "5π", "6π"])
+    elif np.isclose(config.final_time, 2*np.pi):
+        axis.set_xticks(np.linspace(0, config.final_time, 5),
+                        ["0", "π/2", "π", "3π/2", "2π"])
+    figure.suptitle(f"u(x, t): крест, старт 2, двухточечные ГУ с уравнением · "
+                   f"N={config.n}, M={config.steps}, T={config.final_time:.6g}, τ={config.tau:.6g}")
+    figure.legend(handles=[Line2D([0], [0], color="black", linewidth=2, label="Численное u"),
+                           Line2D([0], [0], color="black", linestyle="--", linewidth=1.1,
+                                  label="Точное U = e²ˣ cos t")],
+                  loc="lower center", bbox_to_anchor=(0.5, 0.01), ncol=2, frameon=False)
+    figure.subplots_adjust(left=0.08, right=0.98, top=0.85, bottom=0.26)
+    figure.savefig(output / "solutions_xt.png", dpi=150)
+    plt.close(figure)
 
 
 def save_report_plots(histories: pd.DataFrame, space_table: pd.DataFrame,
